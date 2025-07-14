@@ -1,0 +1,314 @@
+<!DOCTYPE html>  <html lang="en">  
+<head>  
+  <meta charset="UTF-8" />  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>  
+  <title>Forest Key Escape</title>  
+  <style>  
+    html, body {  
+      margin: 0;  
+      overflow: hidden;  
+      background: black;  
+    }  
+    canvas {  
+      display: block;  
+      background: #000;  
+    }  
+    .controls {  
+      position: fixed;  
+      bottom: 80px;  
+      left: 20px;  
+      z-index: 2;  
+      display: grid;  
+      grid-template-areas:  
+        ". up ."  
+        "left . right"  
+        ". down .";  
+      gap: 5px;  
+    }  
+    .controls button {  
+      width: 60px;  
+      height: 60px;  
+      font-size: 0;  
+      background: url('https://img.icons8.com/ios-filled/50/arrow.png') no-repeat center;  
+      background-size: 40px;  
+      border-radius: 10px;  
+      border: 2px solid #fff;  
+      background-color: rgba(255, 255, 255, 0.1);  
+    }  
+    #up { grid-area: up; transform: rotate(-90deg); }  
+    #down { grid-area: down; transform: rotate(90deg); }  
+    #left { grid-area: left; transform: rotate(180deg); }  
+    #right { grid-area: right; transform: rotate(0deg); }  .action-btns {  
+  position: fixed;  
+  bottom: 10px;  
+  right: 10px;  
+  z-index: 2;  
+}  
+.action-btns button {  
+  display: block;  
+  margin: 4px;  
+  width: 80px;  
+  height: 40px;  
+  font-size: 16px;  
+}
+
+  </style>  
+</head>  
+<body>  
+<canvas id="gameCanvas"></canvas>  <div class="controls">  
+  <button id="up"></button>  
+  <button id="down"></button>  
+  <button id="left"></button>  
+  <button id="right"></button>  
+</div>  <div class="action-btns">  
+  <button id="pick">Pick</button>  
+  <button id="drop">Drop</button>  
+</div>  <script>  
+const canvas = document.getElementById("gameCanvas");  
+const ctx = canvas.getContext("2d");  
+  
+function resizeCanvas() {  
+  canvas.width = window.innerWidth;  
+  canvas.height = window.innerHeight;  
+}  
+resizeCanvas();  
+window.addEventListener('resize', resizeCanvas);  
+  
+// Load images  
+const forestImg = new Image();  
+forestImg.src = "https://raw.githubusercontent.com/rk5021100/assets/main/photos/back1.jpg";  
+  
+const riverImg = new Image();  
+riverImg.src = "https://raw.githubusercontent.com/rk5021100/assets/main/photos/river.png";  
+  
+const keyImg = new Image();  
+keyImg.src = "https://raw.githubusercontent.com/rk5021100/assets/main/photos/key1.png";  
+  
+const treeImg = new Image();  
+treeImg.src = "https://raw.githubusercontent.com/rk5021100/assets/main/photos/tree.png";  
+  
+const stoneImg = new Image();  
+stoneImg.src = "https://raw.githubusercontent.com/rk5021100/assets/main/photos/stone.png";  
+  
+const wolfImg = new Image();  
+wolfImg.src = "https://raw.githubusercontent.com/rk5021100/assets/main/photos/wolf.png";  
+  
+const playerImg = new Image();  
+playerImg.src = "https://raw.githubusercontent.com/rk5021100/assets/main/photos/cannibal.png";  
+  
+const portalImg = new Image();  
+portalImg.src = "https://raw.githubusercontent.com/rk5021100/assets/main/photos/portal.png";  
+  
+const bridgeImg = new Image();  
+bridgeImg.src = "https://raw.githubusercontent.com/rk5021100/assets/main/photos/bridge.png";  
+  
+const images = [forestImg, riverImg, keyImg, treeImg, stoneImg, wolfImg, playerImg, portalImg, bridgeImg];  
+let imagesLoaded = 0;  
+  
+images.forEach(img => {  
+  img.onload = () => {  
+    imagesLoaded++;  
+    if (imagesLoaded === images.length) {  
+      gameLoop();  
+    }  
+  };  
+});  
+  
+const forestSize = 2000;  
+const player = { x: 550, y: 550, size: 64, speed: 2, hasKey: false };  
+const wolves = [  
+  { x: 1200, y: 900, dx: 1, dy: 0 },  
+  { x: 1300, y: 1300, dx: -1, dy: 1 },  
+  { x: 800, y: 1400, dx: 0, dy: -1 }  
+];  
+const key = { x: Math.random() * 1800, y: Math.random() * 1800, size: 24, picked: false };  
+const safeZone = { x: 500, y: 500, width: 100, height: 100 };  
+const river = { x: 1000, y: 0, width: 1000, height: forestSize };  
+const bridge = { x: 1300, y: 800, width: 400, height: 300 };  
+const mapOffset = { x: 0, y: 0 };  
+let gameEnded = false;  
+  
+const trees = Array.from({length: 300}, () => ({  
+  x: Math.random() * forestSize,  
+  y: Math.random() * forestSize  
+}));  
+const stones = Array.from({length: 20}, () => ({  
+  x: Math.random() * forestSize,  
+  y: Math.random() * forestSize  
+}));  
+  
+let direction = { up: false, down: false, left: false, right: false };  
+  
+function setDirectionEvents(btnId, dir) {  
+  const btn = document.getElementById(btnId);  
+  btn.addEventListener('pointerdown', () => direction[dir] = true);  
+  btn.addEventListener('pointerup', () => direction[dir] = false);  
+  btn.addEventListener('pointerleave', () => direction[dir] = false);  
+  btn.addEventListener('touchend', () => direction[dir] = false);  
+}  
+setDirectionEvents('up', 'up');  
+setDirectionEvents('down', 'down');  
+setDirectionEvents('left', 'left');  
+setDirectionEvents('right', 'right');  
+  
+document.getElementById("pick").onclick = () => {  
+  if (!key.picked && Math.hypot(player.x - key.x, player.y - key.y) < (player.size / 2 + key.size / 2)) {  
+    key.picked = true;  
+    player.hasKey = true;  
+  }  
+};  
+document.getElementById("drop").onclick = () => {  
+  if (player.hasKey) {  
+    key.picked = false;  
+    player.hasKey = false;  
+    key.x = player.x;  
+    key.y = player.y;  
+  }  
+};  
+  
+function movePlayer() {  
+  let nextX = player.x;  
+  let nextY = player.y;  
+  if (direction.up) nextY -= player.speed;  
+  if (direction.down) nextY += player.speed;  
+  if (direction.left) nextX -= player.speed;  
+  if (direction.right) nextX += player.speed;  
+  
+  const narrowBridgeY = bridge.y + 50;  
+  const narrowBridgeHeight = 150;  
+  const inRiver = (  
+    nextX > river.x + 450 &&  
+    nextX < river.x + 600 &&  
+    (nextY < narrowBridgeY || nextY > narrowBridgeY + narrowBridgeHeight)  
+  );  
+  
+  if (!inRiver) {  
+    player.x = Math.max(0, Math.min(forestSize, nextX));  
+    player.y = Math.max(0, Math.min(forestSize, nextY));  
+  }  
+}  
+  
+
+  
+function checkCollision() {  
+  for (let wolf of wolves) {  
+    const dist = Math.hypot(player.x - wolf.x, player.y - wolf.y);  
+    const inSafeZone = (  
+      player.x > safeZone.x &&  
+      player.x < safeZone.x + safeZone.width &&  
+      player.y > safeZone.y &&  
+      player.y < safeZone.y + safeZone.height  
+    );  
+    if (dist < 30 && !inSafeZone) {  
+      gameEnded = true;  
+      setTimeout(() => {  
+        alert("Game Over: Caught by a Wolf!");  
+        location.reload();  
+      }, 100);  
+      return;  
+    }  
+  }  
+  
+  if (  
+    player.hasKey &&  
+    player.x > safeZone.x &&  
+    player.x < safeZone.x + safeZone.width &&  
+    player.y > safeZone.y &&  
+    player.y < safeZone.y + safeZone.height  
+  ) {  
+    gameEnded = true;  
+    setTimeout(() => {  
+      alert("You Win! Escaped with the Key!");  
+      location.reload();  
+    }, 100);  
+  }  
+}  
+
+function moveWolves() {
+  wolves.forEach(wolf => {
+    const dist = Math.hypot(player.x - wolf.x, player.y - wolf.y);
+    const isInSafeZone = (
+      player.x > safeZone.x &&
+      player.x < safeZone.x + safeZone.width &&
+      player.y > safeZone.y &&
+      player.y < safeZone.y + safeZone.height
+    );
+    let speed = 2; // Increased from 1
+
+    // Check if wolf is outside bridge and trying to cross river
+    const isCrossingRiver = (
+      wolf.x > river.x + 450 &&
+      wolf.x < river.x + 600 &&
+      (wolf.y < bridge.y + 50 || wolf.y > bridge.y + 200)
+    );
+
+    if (isCrossingRiver) return; // Stop if trying to cross river (not on bridge)
+
+    if (dist < 300 && !isInSafeZone) {
+      let angle = Math.atan2(player.y - wolf.y, player.x - wolf.x);
+      wolf.x += Math.cos(angle) * speed;
+      wolf.y += Math.sin(angle) * speed;
+    } else if (dist < 300 && isInSafeZone) {
+      let angle = Math.atan2(player.y - wolf.y, player.x - wolf.x);
+      wolf.x -= Math.cos(angle) * speed;
+      wolf.y -= Math.sin(angle) * speed;
+    } else {
+      wolf.x += wolf.dx * 1; // Wander faster
+      wolf.y += wolf.dy * 1;
+      if (wolf.x < 0 || wolf.x > forestSize) wolf.dx *= -1;
+      if (wolf.y < 0 || wolf.y > forestSize) wolf.dy *= -1;
+      if (Math.random() < 0.01) {
+        let angle = Math.random() * Math.PI * 2;
+        wolf.dx = Math.cos(angle);
+        wolf.dy = Math.sin(angle);
+      }
+    }
+  });
+}
+
+
+function draw() {  
+  mapOffset.x = player.x - canvas.width / 2;  
+  mapOffset.y = player.y - canvas.height / 2;  
+  
+  ctx.clearRect(0, 0, canvas.width, canvas.height);  
+  ctx.drawImage(forestImg, -mapOffset.x, -mapOffset.y, forestSize, forestSize);  
+  ctx.drawImage(riverImg, river.x - mapOffset.x, river.y - mapOffset.y, river.width, river.height);  
+  ctx.drawImage(bridgeImg, bridge.x - mapOffset.x, bridge.y - mapOffset.y, bridge.width, bridge.height);  
+  
+  trees.forEach(tree => ctx.drawImage(treeImg, tree.x - mapOffset.x, tree.y - mapOffset.y, 80, 80));  
+  stones.forEach(stone => ctx.drawImage(stoneImg, stone.x - mapOffset.x, stone.y - mapOffset.y, 32, 32));  
+  ctx.drawImage(portalImg, safeZone.x - mapOffset.x, safeZone.y - mapOffset.y, safeZone.width, safeZone.height);  
+  
+  if (!key.picked) ctx.drawImage(keyImg, key.x - mapOffset.x, key.y - mapOffset.y, 24, 24);  
+  
+  ctx.save();  
+  ctx.beginPath();  
+  ctx.arc(canvas.width / 2, canvas.height / 2, 100, 0, Math.PI * 2);  
+  ctx.clip();  
+  ctx.fillStyle = "rgba(255,255,255,0.1)";  
+  ctx.fillRect(0, 0, canvas.width, canvas.height);  
+  ctx.restore();  
+  
+  ctx.drawImage(playerImg, canvas.width / 2 - player.size / 2, canvas.height / 2 - player.size / 2, player.size, player.size);  
+  wolves.forEach(wolf => {  
+    ctx.drawImage(wolfImg, wolf.x - mapOffset.x - 32, wolf.y - mapOffset.y - 32, 64, 64);  
+  });  
+  
+  if (gameEnded) {  
+    ctx.fillStyle = "rgba(0, 0, 0, 0.4)";  
+    ctx.fillRect(0, 0, canvas.width, canvas.height);  
+  }  
+}  
+  
+function gameLoop() {  
+  if (!gameEnded) {  
+    movePlayer();  
+    moveWolves();  
+    checkCollision();  
+  }  
+  draw();  
+  requestAnimationFrame(gameLoop);  
+}  
+</script>  </body>  
+</html>
